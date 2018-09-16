@@ -78,7 +78,7 @@ const constants = {
 
 describe('createOrder', () => {
 
-  let sandbox, tweetStatusSpy, fearlesscitiesbrussels, emailSendMessageSpy;
+  let sandbox, tweetStatusSpy, fearlesscitiesbrussels, emailSendMessageSpy, hostCollective;
 
   before(() => {
     nock('http://data.fixer.io')
@@ -103,7 +103,7 @@ describe('createOrder', () => {
     emailSendMessageSpy = sandbox.spy(emailLib, 'sendMessage');
 
     // Given a collective (with a host)
-    ({ fearlesscitiesbrussels } = await store.newCollectiveWithHost('fearlesscitiesbrussels', 'EUR', 'EUR', 5));
+    ({ fearlesscitiesbrussels, hostCollective } = await store.newCollectiveWithHost('fearlesscitiesbrussels', 'EUR', 'EUR', 5));
     // And the above collective's host has a stripe account
     await store.stripeConnectedAccount(fearlesscitiesbrussels.HostCollectiveId);
     // And given that the above collective is active
@@ -142,6 +142,35 @@ describe('createOrder', () => {
 
       expect(res.errors).to.not.exist;
       expect(res.data.createOrder.status).to.equal('PENDING');
+    });
+
+    it("creates a pending order (pledge) if the collective is active and no payment method attached", async () => {
+      const collective = await models.Collective.create({
+        slug: 'test',
+        name: 'test',
+        isActive: true
+      });
+      const thisOrder = cloneDeep(order);
+      delete thisOrder.paymentMethod;
+      const pm = await models.PaymentMethod.create({
+        service: 'opencollective',
+        type: 'manual',
+        CollectiveId: hostCollective.id
+      });
+      thisOrder.paymentMethod = { uuid: pm.uuid };
+      thisOrder.collective.id = collective.id;
+      thisOrder.user = {
+        firstName: "John",
+        lastName: "Smith",
+        email: "jsmith@email.com",
+        twitterHandle: "johnsmith"
+      };
+
+      const res = await utils.graphqlQuery(createOrderQuery, { order: thisOrder });
+      expect(res.errors).to.not.exist;
+      expect(res.data.createOrder.status).to.equal('PENDING');
+      const transactionsCount = await models.Transaction.count({ where: { OrderId: res.data.createOrder.id }});
+      expect(transactionsCount).to.equal(0);
     });
 
     it('creates an order as new user and sends a tweet', async () => {
@@ -296,7 +325,6 @@ describe('createOrder', () => {
       const res = await utils.graphqlQuery(createOrderQuery, { order }, xdamman);
       // Then there should be no errors
       expect(res.errors).to.not.exist;
-      expect(res.data.createOrder.status).to.equal('PAID');
       // And then the creator of the order should be xdamman
       const collective = res.data.createOrder.collective;
       const transaction = await models.Transaction.findOne({
@@ -313,6 +341,8 @@ describe('createOrder', () => {
       // make sure the payment has been recorded in the connected
       // Stripe Account of the host
       expect(transaction.data.charge.currency).to.equal('eur');
+      const createdOrder = await models.Order.findById(res.data.createOrder.id);
+      expect(createdOrder.status).to.equal('PAID');
     });
 
     it('creates an order as logged in user using saved credit card', async () => {
@@ -392,9 +422,7 @@ describe('createOrder', () => {
       expect(res.errors).to.not.exist;
       // Then the created transaction should match the requested data
       const orderCreated = res.data.createOrder;
-      expect(orderCreated.status).to.equal('ACTIVE');
-      const collective = orderCreated.collective;
-      const subscription = orderCreated.subscription;
+      const { collective, subscription } = orderCreated;
 
       expect(subscription.interval).to.equal('month');
       expect(subscription.isActive).to.be.true;
@@ -408,6 +436,8 @@ describe('createOrder', () => {
       expect(transaction.FromCollectiveId).to.equal(xdamman.CollectiveId);
       expect(transaction.CollectiveId).to.equal(collective.id);
       expect(transaction.currency).to.equal(collective.currency);
+      const createdOrder = await models.Order.findById(res.data.createOrder.id);
+      expect(createdOrder.status).to.equal('ACTIVE');
     });
 
     it('creates an order as a new user for a new organization', async () => {
