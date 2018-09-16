@@ -17,14 +17,14 @@ describe('lib.transactions.test.js', () => {
     // Given a host with a collective
     const currency = 'USD';
     const { collective } = await store.newCollectiveWithHost('apex', currency, currency, 10);
-    const { userCollective } = await store.newUser('a new user');
+    const { user } = await store.newUser('a new user');
     // And given some transactions
     await store.stripeConnectedAccount(collective.HostCollectiveId);
-    await store.stripeOneTimeDonation({ userCollective, collective, currency, amount: 100 });
-    await store.stripeOneTimeDonation({ userCollective, collective, currency, amount: 200 });
-    await store.stripeOneTimeDonation({ userCollective, collective, currency, amount: 300 });
-    await store.stripeOneTimeDonation({ userCollective, collective, currency, amount: 400 });
-    await store.stripeOneTimeDonation({ userCollective, collective, currency, amount: 500 });
+    await store.stripeOneTimeDonation({ remoteUser: user, collective, currency, amount: 100 });
+    await store.stripeOneTimeDonation({ remoteUser: user, collective, currency, amount: 200 });
+    await store.stripeOneTimeDonation({ remoteUser: user, collective, currency, amount: 300 });
+    await store.stripeOneTimeDonation({ remoteUser: user, collective, currency, amount: 400 });
+    await store.stripeOneTimeDonation({ remoteUser: user, collective, currency, amount: 500 });
     const transactions = await models.Transaction.findAll({ where: { CollectiveId: collective.id } });
     expect(transactions.length).to.equal(5);
     // When the newly created transactions are exported

@@ -13,7 +13,7 @@ async function donation(collective, user, amount, currency, createdAt) {
   return store.stripeOneTimeDonation({
     amount,
     currency,
-    userCollective: user.collective,
+    remoteUser: user,
     collective,
     createdAt,
   });

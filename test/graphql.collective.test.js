@@ -42,7 +42,8 @@ describe('graphql.collective.test.js', () => {
     // And given a donation from an organization
     const org0 = await store.newOrganization({ name: 'org0', currency }, orgadm0);
     await store.stripeOneTimeDonation({
-      userCollective: org0,
+      remoteUser: orgadm0,
+      fromCollective: org0,
       collective: apex,
       currency,
       amount: 20000
@@ -52,7 +53,7 @@ describe('graphql.collective.test.js', () => {
     for (let i = 0; i < 10; i++) {
       const { user } = await store.newUser(`testuser${i}`);
       await store.stripeOneTimeDonation({
-        userCollective: user.collective,
+        remoteUser: user,
         collective: apex,
         currency,
         amount: 1000 * (i + 1),
@@ -367,18 +368,18 @@ describe('graphql.collective.test.js', () => {
     // And given the host has a stripe account
     await store.stripeConnectedAccount(hostCollective.id);
     // And given some purchases from users to the collective
-    await store.stripeOneTimeDonation({ userCollective: theuser0.collective, collective, currency, amount: 100 });
-    await store.stripeOneTimeDonation({ userCollective: theuser0.collective, collective, currency, amount: 200 });
-    await store.stripeOneTimeDonation({ userCollective: theuser0.collective, collective, currency, amount: 500 });
-    await store.stripeOneTimeDonation({ userCollective: theuser1.collective, collective, currency, amount: 5000 });
-    await store.stripeOneTimeDonation({ userCollective: theuser1.collective, collective, currency, amount: 5000 });
+    await store.stripeOneTimeDonation({ remoteUser: theuser0, collective, currency, amount: 100 });
+    await store.stripeOneTimeDonation({ remoteUser: theuser0, collective, currency, amount: 200 });
+    await store.stripeOneTimeDonation({ remoteUser: theuser0, collective, currency, amount: 500 });
+    await store.stripeOneTimeDonation({ remoteUser: theuser1, collective, currency, amount: 5000 });
+    await store.stripeOneTimeDonation({ remoteUser: theuser1, collective, currency, amount: 5000 });
     // And given the following organizations
     const org0 = await store.newOrganization({ name: 'org0', currency }, orgadm0);
     const org1 = await store.newOrganization({ name: 'org1', currency }, orgadm1);
     // And given some donations from the above orgs
-    await store.stripeOneTimeDonation({ userCollective: org0, collective, currency, amount: 100000 });
-    await store.stripeOneTimeDonation({ userCollective: org0, collective, currency, amount: 200000 });
-    await store.stripeOneTimeDonation({ userCollective: org1, collective, currency, amount: 100000 });
+    await store.stripeOneTimeDonation({ remoteUser: orgadm0, fromCollective: org0, collective, currency, amount: 100000 });
+    await store.stripeOneTimeDonation({ remoteUser: orgadm0, fromCollective: org0, collective, currency, amount: 200000 });
+    await store.stripeOneTimeDonation({ remoteUser: orgadm1, fromCollective: org1, collective, currency, amount: 100000 });
 
     // When the query is performed
     const query = `
@@ -386,6 +387,7 @@ describe('graphql.collective.test.js', () => {
       Collective(slug: $slug) {
         members(type: $type, limit: 10, offset: 0) {
           id
+          role
           stats {
             totalDonations
           }
@@ -484,21 +486,21 @@ describe('graphql.collective.test.js', () => {
       brusselsTogetherHostAdmin = hostAdmin;
       await store.stripeConnectedAccount(hostCollective.id);
       // And given some purchases
-      await store.stripeOneTimeDonation({ userCollective: user.collective, collective, currency, amount: 100 });
-      await store.stripeOneTimeDonation({ userCollective: user0.collective, collective, currency, amount: 100 });
-      await store.stripeOneTimeDonation({ userCollective: user1.collective, collective, currency, amount: 500 });
-      await store.stripeOneTimeDonation({ userCollective: xdamman.collective, collective, currency, amount: 2000 });
+      await store.stripeOneTimeDonation({ remoteUser: user, collective, currency, amount: 100 });
+      await store.stripeOneTimeDonation({ remoteUser: user0, collective, currency, amount: 100 });
+      await store.stripeOneTimeDonation({ remoteUser: user1, collective, currency, amount: 500 });
+      await store.stripeOneTimeDonation({ remoteUser: xdamman, collective, currency, amount: 2000 });
 
       // And given some other collectives under the same host and some
       // donations made by xdamman
       const { veganizerbxl } = await store.newCollectiveInHost('veganizerbxl', currency, hostCollective, null, { isActive: true });
       const { another } = await store.newCollectiveInHost('another', currency, hostCollective, null, { isActive: true });
-      await store.stripeOneTimeDonation({ userCollective: xdamman.collective, collective: veganizerbxl, currency, amount: 1000 });
-      await store.stripeOneTimeDonation({ userCollective: xdamman.collective, collective: another, currency, amount: 1000 });
+      await store.stripeOneTimeDonation({ remoteUser: xdamman, collective: veganizerbxl, currency, amount: 1000 });
+      await store.stripeOneTimeDonation({ remoteUser: xdamman, collective: another, currency, amount: 1000 });
 
       // And given another collective and another purchase but now for Pia's user
       const { opensource } = await store.newCollectiveInHost('opensource', currency, hostCollective, null, { isActive: true });
-      await store.stripeOneTimeDonation({ userCollective: piamancini.collective, collective: opensource, currency, amount: 1000 });
+      await store.stripeOneTimeDonation({ remoteUser: piamancini, collective: opensource, currency, amount: 1000 });
     });
 
     it('gets the active members ', async () => {
