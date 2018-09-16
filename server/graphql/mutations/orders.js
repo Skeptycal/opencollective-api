@@ -183,6 +183,7 @@ export async function createOrder(order, loaders, remoteUser) {
       publicMessage: order.publicMessage,
       privateMessage: order.privateMessage,
       MatchingPaymentMethodId: order.MatchingPaymentMethodId,
+      status: status.PENDING, // default status, will get updated after the order is processed
     };
 
     if (order.referral && get(order, 'referral.id') !== orderData.FromCollectiveId) {
