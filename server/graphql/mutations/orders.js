@@ -182,7 +182,6 @@ export async function createOrder(order, loaders, remoteUser) {
       description: order.description || defaultDescription,
       publicMessage: order.publicMessage,
       privateMessage: order.privateMessage,
-      processedAt: paymentRequired ? null : new Date,
       MatchingPaymentMethodId: order.MatchingPaymentMethodId,
     };
 

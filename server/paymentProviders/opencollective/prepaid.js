@@ -1,5 +1,4 @@
 import models from '../../models';
-import roles from '../../constants/roles';
 import * as libpayments from '../../lib/payments';
 import * as libtransactions from '../../lib/transactions';
 import { TransactionTypes, OC_FEE_PERCENT } from '../../constants/transactions';
@@ -77,14 +76,6 @@ async function processOrder(order) {
       description: order.description
     }
   });
-
-  // add roles
-  await order.collective.findOrAddUserWithRole({ id: user.id, CollectiveId: order.fromCollective.id}, roles.BACKER, {
-    CreatedByUserId: user.id, TierId: order.TierId,
-  });
-
-  // Mark order row as processed
-  await order.update({ processedAt: new Date() });
 
   // Mark paymentMethod as confirmed
   order.paymentMethod.update({ confirmedAt: new Date() });

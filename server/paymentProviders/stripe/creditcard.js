@@ -3,7 +3,6 @@ import config from 'config';
 
 import models from '../../models';
 import * as constants from '../../constants/transactions';
-import roles from '../../constants/roles';
 import * as stripeGateway from './gateway';
 import * as paymentsLib from '../../lib/payments';
 import { planId } from '../../lib/utils';
@@ -151,12 +150,6 @@ export default {
       // both one-time and subscriptions get charged immediately
       .then(() => createChargeAndTransactions(hostStripeAccount))
       .tap(t => transactions = t)
-
-      // add user to the collective
-      .tap(() => collective.findOrAddUserWithRole({ id: user.id, CollectiveId: fromCollective.id}, roles.BACKER, { CreatedByUserId: user.id, TierId: order.TierId }))
-
-      // Mark order row as processed
-      .tap(() => order.update({ processedAt: new Date() }))
 
       // Mark paymentMethod as confirmed
       .tap(() => paymentMethod.update({ confirmedAt: new Date }))
