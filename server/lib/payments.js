@@ -385,7 +385,7 @@ const sendOrderProcessingEmail = (order) => {
   const user = order.createdByUser;
 
   return emailLib.send(
-      'processing',
+      'order.processing',
       user.email,
       { order: order.info,
         user: user.info,

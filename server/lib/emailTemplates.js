@@ -49,7 +49,7 @@ const templateNames = [
   'organization.newmember',
   'payment.failed',
   'payment.failed.text',
-  'processing',
+  'order.processing',
   'report.platform',
   'subscription.canceled',
   'ticket.confirmed',
