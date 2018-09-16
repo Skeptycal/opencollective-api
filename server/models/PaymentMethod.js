@@ -246,7 +246,7 @@ export default function(Sequelize, DataTypes) {
       }
 
       // If there is no monthly limit, the user needs to be an admin of the collective that owns the payment method
-      if (!this.monthlyLimitPerMember && !user.isAdmin(this.CollectiveId)) {
+      if (!this.monthlyLimitPerMember && !user.isAdmin(this.CollectiveId) && this.type !== 'manual') {
         throw new Error(`You don't have enough permissions to use this payment method (you need to be an admin of the collective that owns this payment method)`);
       }
     }
