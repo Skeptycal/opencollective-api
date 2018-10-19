@@ -439,6 +439,10 @@ const queries = {
     args: {
       CollectiveId: { type: new GraphQLNonNull(GraphQLInt) },
       includeHostedCollectives: { type: GraphQLBoolean },
+      includeChildCollectives: {
+        type: GraphQLBoolean,
+        description: 'include updates from child collectives',
+      },
       limit: { type: GraphQLInt },
       offset: { type: GraphQLInt },
     },
@@ -457,8 +461,12 @@ const queries = {
             throw new Error('Collective not found');
           }
           const getCollectiveIds = () => {
-            // if is host, we get all the updates across all the hosted collectives
-            if (args.includeHostedCollectives) {
+            if (args.includeChildCollectives) {
+              return models.Collective.findAll({
+                attributes: ['id'],
+                where: { ParentCollectiveId: collective.id },
+              }).map(c => c.id);
+            } else if (args.includeHostedCollectives) {
               return models.Member.findAll({
                 where: {
                   MemberCollectiveId: collective.id,
