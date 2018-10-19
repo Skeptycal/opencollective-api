@@ -1,10 +1,12 @@
 /** @module models/Transaction */
 
 import Promise from 'bluebird';
+import axios from 'axios';
 import activities from '../constants/activities';
 import { TransactionTypes } from '../constants/transactions';
 import CustomDataTypes from './DataTypes';
 import uuidv4 from 'uuid/v4';
+import { ledger } from 'config';
 import debugLib from 'debug';
 import { toNegative } from '../lib/math';
 import { exportToCSV } from '../lib/utils';
@@ -200,6 +202,7 @@ export default (Sequelize, DataTypes) => {
       hooks: {
         afterCreate: transaction => {
           Transaction.createActivity(transaction);
+          Transaction.postTransactionToLedger(transaction);
           // intentionally returns null, needs to be async (https://github.com/petkaantonov/bluebird/blob/master/docs/docs/warning-explanations.md#warning-a-promise-was-created-in-a-handler-but-was-not-returned-from-it)
           return null;
         },
@@ -519,6 +522,38 @@ export default (Sequelize, DataTypes) => {
           ),
         )
     );
+  };
+
+  Transaction.postTransactionToLedger = async (transaction) => {
+    if (transaction.deletedAt || transaction.type !== 'CREDIT' || !transaction.PaymentMethodId) {
+      return Promise.resolve();
+    }
+    try {
+      const paymentMethod = await models.PaymentMethod.findById(transaction.PaymentMethodId);
+      const ledgerTransaction = {
+        FromAccountId: transaction.FromCollectiveId, // `${transaction.FromCollectiveId}(${transaction.fromCollectiveName})`,
+        FromWalletName: transaction.PaymentMethodId,
+        ToAccountId:  transaction.CollectiveId, // `${transaction.CollectiveId}(${transaction.collectiveName})`,
+        ToWalletName: `${transaction.CollectiveId}_${transaction.HostCollectiveId}`, // Create a payment method
+        amount: transaction.amountInHostCurrency,
+        currency: transaction.hostCurrency,
+        destinationAmount: transaction.amount, // ONLY for FOREX transactions(currency != hostCurrency)
+        destinationCurrency: transaction.currency, // ONLY for FOREX transactions(currency != hostCurrency)
+        walletProviderFee: Math.round(-1 * transaction.hostFeeInHostCurrency/transaction.hostCurrencyFxRate),
+        WalletProviderAccountId:  transaction.HostCollectiveId, // `${transaction.HostCollectiveId}(${transaction.hostName})`,
+        WalletProviderWalletName: transaction.HostCollectiveId,
+        platformFee: Math.round(-1 * transaction.platformFeeInHostCurrency/transaction.hostCurrencyFxRate),
+        paymentProviderFee: Math.round(-1 * transaction.paymentProcessorFeeInHostCurrency/transaction.hostCurrencyFxRate),
+        PaymentProviderAccountId: paymentMethod.service, // PaymentMethod.service
+        PaymentProviderWalletName: paymentMethod.type, // PaymentMethod.type
+        LegacyTransactionId: transaction.id,
+      };
+      const ledgerUrlResult = await axios.post(ledger.postTransactionUrl, ledgerTransaction);
+      return ledgerUrlResult;
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
   };
 
   return Transaction;
