@@ -524,30 +524,212 @@ export default (Sequelize, DataTypes) => {
     );
   };
 
+  const getTransactionToLedgerNestedProperties = async (transaction) => {
+    // f.slug as "fromCollectiveSlug",
+    if (transaction.FromCollectiveId) {
+      const fromCollective = await models.Collective.findById(transaction.FromCollectiveId);
+      transaction.fromCollectiveSlug = fromCollective.slug;
+    }
+    if (transaction.CollectiveId) {
+      const collective = await models.Collective.findById(transaction.CollectiveId);
+      transaction.collectiveSlug = collective.slug;
+    }
+    if (transaction.HostCollectiveId) {
+      const hostCollective = await models.Collective.findById(transaction.HostCollectiveId);
+      transaction.hostCollectiveSlug = hostCollective.slug;
+    }
+    if (transaction.HostCollectiveId) {
+      const paymentMethod = await models.PaymentMethod.findById(transaction.PaymentMethodId);
+      transaction.paymentMethodService = paymentMethod.service;
+      transaction.paymentMethodType = paymentMethod.type;
+      if (paymentMethod.CollectiveId) {
+        transaction.paymentMethodCollectiveId = paymentMethod.CollectiveId;
+        const pmCollective = await models.Collective.findById(paymentMethod.CollectiveId);
+        transaction.paymentMethodCollectiveSlug = pmCollective.slug;
+      }
+    }
+    if (transaction.OrderId) {
+      const order = await models.Order.findById(transaction.OrderId);
+      if (order.FromCollectiveId) {
+        transaction.orderFromCollectiveId = order.FromCollectiveId;
+        const orderFromCollective = await models.Collective.findById(order.FromCollectiveId);
+        transaction.orderFromCollectiveSlug = orderFromCollective.slug;
+      }
+      if (order.PaymentMethodId) {
+        const orderPaymentMethod = await models.PaymentMethod.findById(order.PaymentMethodId);
+        transaction.orderPaymentMethodService = orderPaymentMethod.service;
+        transaction.orderPaymentMethodType = orderPaymentMethod.type;
+        if (orderPaymentMethod.CollectiveId) {
+          transaction.orderPaymentMethodCollectiveId = orderPaymentMethod.CollectiveId;
+          const orderPaymentMethodCollective = await models.Collective.findById(orderPaymentMethod.CollectiveId);
+          transaction.orderPaymentMethodCollectiveSlug = orderPaymentMethodCollective.slug;
+        }
+      }
+    }
+    if (transaction.ExpenseId) {
+      const expense = await models.Expense.findById(transaction.ExpenseId);
+      transaction.expensePayoutMethod = expense.payoutMethod;
+      if (expense.UserId) {
+        transaction.expenseUserId = expense.UserId;
+        const expenseUser = await models.User.findById(expense.UserId);
+        transaction.expenseUserPaypalEmail = expenseUser.paypalEmail;
+        if (expenseUser.CollectiveId) {
+          const expenseUserCollective = await models.Collective.findById(expenseUser.CollectiveId);
+          transaction.expenseUserCollectiveSlug = expenseUserCollective.slug;
+        }
+      }
+      if (expense.CollectiveId) {
+        const expenseCollective = await models.Collective.findById(expense.CollectiveId);
+        transaction.expenseCollectiveId = expense.CollectiveId;
+        transaction.expenseCollectiveSlug = expenseCollective.slug;
+      }
+    }
+    return transaction;
+  };
+
   Transaction.postTransactionToLedger = async (transaction) => {
     if (transaction.deletedAt || transaction.type !== 'CREDIT' || !transaction.PaymentMethodId) {
       return Promise.resolve();
     }
     try {
-      const paymentMethod = await models.PaymentMethod.findById(transaction.PaymentMethodId);
+      transaction = await getTransactionToLedgerNestedProperties(transaction);
+      // We define all properties of the new ledger here, except for all wallets(from, to, and fees)
+      // and the WalletProvider and PaymentProvider Account ids
+      const hostCurrency = transaction.hostCurrency || transaction.currency;
+      const amountInHostCurrency = transaction.amountInHostCurrency || transaction.amount;
+      // Fees are negative in DEBIT transactions...
+      const hostFeeInHostCurrency = -1 * transaction.hostFeeInHostCurrency;
+      const platformFeeInHostCurrency = -1 * transaction.platformFeeInHostCurrency;
+      const paymentProcessorFeeInHostCurrency = -1 * transaction.paymentProcessorFeeInHostCurrency;
       const ledgerTransaction = {
-        FromAccountId: transaction.FromCollectiveId, // `${transaction.FromCollectiveId}(${transaction.fromCollectiveName})`,
-        FromWalletName: transaction.PaymentMethodId,
-        ToAccountId:  transaction.CollectiveId, // `${transaction.CollectiveId}(${transaction.collectiveName})`,
-        ToWalletName: `${transaction.CollectiveId}_${transaction.HostCollectiveId}`, // Create a payment method
-        amount: transaction.amountInHostCurrency,
-        currency: transaction.hostCurrency,
-        destinationAmount: transaction.amount, // ONLY for FOREX transactions(currency != hostCurrency)
-        destinationCurrency: transaction.currency, // ONLY for FOREX transactions(currency != hostCurrency)
-        walletProviderFee: Math.round(-1 * transaction.hostFeeInHostCurrency/transaction.hostCurrencyFxRate),
-        WalletProviderAccountId:  transaction.HostCollectiveId, // `${transaction.HostCollectiveId}(${transaction.hostName})`,
-        WalletProviderWalletName: transaction.HostCollectiveId,
-        platformFee: Math.round(-1 * transaction.platformFeeInHostCurrency/transaction.hostCurrencyFxRate),
-        paymentProviderFee: Math.round(-1 * transaction.paymentProcessorFeeInHostCurrency/transaction.hostCurrencyFxRate),
-        PaymentProviderAccountId: paymentMethod.service, // PaymentMethod.service
-        PaymentProviderWalletName: paymentMethod.type, // PaymentMethod.type
+        FromAccountId: transaction.FromCollectiveId,
+        ToAccountId:  transaction.CollectiveId,
+        amount: amountInHostCurrency,
+        currency: hostCurrency,
+        // destinationAmount: transaction.amount, // ONLY for FOREX transactions(currency != hostCurrency)
+        // destinationCurrency: transaction.currency, // ONLY for FOREX transactions(currency != hostCurrency)
+        walletProviderFee: hostFeeInHostCurrency,
+        platformFee: platformFeeInHostCurrency,
+        paymentProviderFee: paymentProcessorFeeInHostCurrency,
         LegacyTransactionId: transaction.id,
+        forexRate: transaction.hostCurrencyFxRate,
       };
+      // setting toWallet
+      ledgerTransaction.toWallet = {
+        currency: hostCurrency,
+        AccountId: transaction.CollectiveId,
+      };
+      if (transaction.HostCollectiveId) {
+        // setting toWallet properties
+        ledgerTransaction.toWallet.name = `owner: ${transaction.hostCollectiveSlug}, account: ${transaction.collectiveSlug}, ${hostCurrency}`;
+        ledgerTransaction.toWallet.OwnerAccountId = transaction.HostCollectiveId;
+        // if there is HostCollectiveId and hostFeeInHostCurrency, so we add the Wallet Provider
+        // according to the Host Collective properties
+        if (hostFeeInHostCurrency > 0) {
+          ledgerTransaction.walletProviderFee = hostFeeInHostCurrency;
+          ledgerTransaction.WalletProviderAccountId = transaction.HostCollectiveId;
+          ledgerTransaction.walletProviderWallet = {
+            name: `owner and account: ${transaction.hostCollectiveSlug}, multi-currency`,
+            currency: null,
+            AccountId: transaction.HostCollectiveId,
+            OwnerAccountId: transaction.HostCollectiveId,
+          };
+        }
+      } else {
+        // setting toWallet properties in case there's no host fees
+        ledgerTransaction.toWallet.name = `owner: ${transaction.collectiveSlug}, account: ${transaction.collectiveSlug}, ${hostCurrency}`;
+        ledgerTransaction.toWallet.OwnerAccountId = transaction.CollectiveId;
+        // if there is No HostCollectiveId but there ishostFeeInHostCurrency,
+        // We add the wallet provider through either the ExpenseId or OrderId
+        if (hostFeeInHostCurrency > 0) {
+          ledgerTransaction.walletProviderFee = hostFeeInHostCurrency;
+          if (transaction.ExpenseId) {
+            // setting toWallet properties in case there's host fees through an Expense
+            ledgerTransaction.toWallet.name = `owner: ${transaction.expensePayoutMethod}(through ${transaction.expenseUserPaypalEmail}), account: ${transaction.collectiveSlug}, ${hostCurrency}`;
+            ledgerTransaction.toWallet.OwnerAccountId = `payment method: ${transaction.expensePayoutMethod}, paypal email: ${transaction.expenseUserPaypalEmail}`;
+            // setting wallet provider wallet
+            ledgerTransaction.WalletProviderAccountId = `payment method: ${transaction.expensePayoutMethod}, paypal email: ${transaction.expenseUserPaypalEmail}`;
+            ledgerTransaction.walletProviderWallet = {
+              name: `owner and account: ${transaction.expensePayoutMethod}(through ${transaction.expenseUserPaypalEmail}), multi-currency`,
+              currency: transaction.expenseCurrency,
+              AccountId: `payment method: ${transaction.expensePayoutMethod}, paypal email: ${transaction.expenseUserPaypalEmail}`,
+              OwnerAccountId: `payment method: ${transaction.expensePayoutMethod}, paypal email: ${transaction.expenseUserPaypalEmail}`,
+            };
+          } else { // Order
+            // setting toWallet properties in case there's host fees through an Expense
+            ledgerTransaction.toWallet.name = `owner: ${transaction.orderPaymentMethodCollectiveSlug}(Order), account: ${transaction.collectiveSlug}, ${hostCurrency}`;
+            ledgerTransaction.toWallet.OwnerAccountId = `${transaction.orderPaymentMethodCollectiveSlug}(Order)`;
+            // setting wallet provider wallet
+            ledgerTransaction.WalletProviderAccountId = `${transaction.orderPaymentMethodCollectiveSlug}(Order)`;
+            ledgerTransaction.walletProviderWallet = {
+              name: `owner and account: ${transaction.orderPaymentMethodCollectiveSlug}(Order), multi-currency`,
+              currency: null,
+              AccountId: `${transaction.orderPaymentMethodCollectiveSlug}(Order)`,
+              OwnerAccountId: `${transaction.orderPaymentMethodCollectiveSlug}(Order)`,
+            };
+          }
+        }
+      }
+      // setting fromWallet
+      ledgerTransaction.fromWallet = {
+        name: '',
+        currency: hostCurrency,
+        AccountId: transaction.FromCollectiveId,
+        PaymentMethodId: transaction.PaymentMethodId || null,
+        ExpenseId: transaction.ExpenseId || null,
+        OrderId: transaction.OrderId || null,
+      };
+      // setting from and payment provider wallets
+      if (transaction.PaymentMethodId) {
+        ledgerTransaction.fromWallet.name = `owner: ${transaction.paymentMethodCollectiveSlug}, account: ${transaction.fromCollectiveSlug}, ${hostCurrency}`;
+        ledgerTransaction.fromWallet.OwnerAccountId = transaction.paymentMethodCollectiveId;
+        // creating Payment Provider wallet
+        ledgerTransaction.PaymentProviderAccountId = transaction.paymentMethodService;
+        ledgerTransaction.paymentProviderWallet = {
+          name: transaction.paymentMethodType,
+          currency: null,
+          AccountId: transaction.paymentMethodService,
+          OwnerAccountId: transaction.paymentMethodService,
+          PaymentMethodId: transaction.PaymentMethodId,
+        };
+      } else if (transaction.ExpenseId) {
+        ledgerTransaction.fromWallet.name = `owner: ${transaction.expenseCollectiveSlug}, account: ${transaction.fromCollectiveSlug}, ${hostCurrency}`;
+        ledgerTransaction.fromWallet.OwnerAccountId = transaction.expenseCollectiveId;
+        ledgerTransaction.PaymentProviderAccountId = transaction.expensePayoutMethod;
+        ledgerTransaction.paymentProviderWallet = {
+          name: `owner and account: ${transaction.expensePayoutMethod}, multi-currency`,
+          currency: null,
+          AccountId: transaction.expensePayoutMethod,
+          OwnerAccountId: transaction.expensePayoutMethod,
+          ExpenseId: transaction.ExpenseId,
+        };
+      } else { // If there is no PaymentMethodId nor ExpenseId, there will be OrderId
+        // Order has PaymentMethod, then the slug will come from the transaction.order.paymentmethod
+        // otherwise we will consider transaction.order.fromCollective as the owner
+        if (transaction.orderPaymentMethodCollectiveSlug) {
+          ledgerTransaction.fromWallet.name = `owner: ${transaction.orderPaymentMethodCollectiveSlug}, account: ${transaction.fromCollectiveSlug}, ${hostCurrency}`;
+          ledgerTransaction.fromWallet.OwnerAccountId = transaction.orderPaymentMethodCollectiveId;
+          ledgerTransaction.PaymentProviderAccountId = `${transaction.orderPaymentMethodCollectiveId}_${transaction.orderPaymentMethodService}_${transaction.orderPaymentMethodType}`;
+          ledgerTransaction.paymentProviderWallet = {
+            name: `account and owner:${transaction.orderPaymentMethodCollectiveId}, service: ${transaction.orderPaymentMethodService}, type: ${transaction.orderPaymentMethodType}`,
+            currency: null,
+            AccountId: `${transaction.orderPaymentMethodCollectiveId}_${transaction.orderPaymentMethodService}_${transaction.orderPaymentMethodType}`,
+            OwnerAccountId: `${transaction.orderPaymentMethodCollectiveId}_${transaction.orderPaymentMethodService}_${transaction.orderPaymentMethodType}`,
+            OrderId: transaction.OrderId,
+          };
+        } else {
+          ledgerTransaction.fromWallet.name = `owner: ${transaction.orderFromCollectiveSlug}, account: ${transaction.fromCollectiveSlug}, ${hostCurrency}`;
+          ledgerTransaction.fromWallet.OwnerAccountId = transaction.orderFromCollectiveId;
+          ledgerTransaction.PaymentProviderAccountId = `${transaction.orderFromCollectiveId}_${transaction.OrderId}`;
+          ledgerTransaction.paymentProviderWallet = {
+            name: `from ${transaction.orderFromCollectiveSlug}(Order id ${transaction.OrderId})`,
+            currency: null,
+            AccountId: `${transaction.orderFromCollectiveId}_${transaction.OrderId}`,
+            OwnerAccountId: `${transaction.orderFromCollectiveId}_${transaction.OrderId}`,
+            OrderId: transaction.OrderId,
+          };
+        }
+      }
       const ledgerUrlResult = await axios.post(ledger.postTransactionUrl, ledgerTransaction);
       return ledgerUrlResult;
     } catch (error) {
