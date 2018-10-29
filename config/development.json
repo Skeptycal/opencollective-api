@@ -22,6 +22,10 @@
     "url": "http://localhost:3070",
     "postTransactionUrl": "http://localhost:3070/transactions"
   },
+  "ledgerQueue": {
+    "url": "amqp://localhost",
+    "transactionQueue": "transactions"
+  },
   "keys": {
     "opencollective": {
       "api_key": "dvl-1510egmf4a23d80342403fb599qd",
