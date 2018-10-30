@@ -596,9 +596,9 @@ export default (Sequelize, DataTypes) => {
       // return axios.post(ledger.postTransactionUrl, ledgerTransaction);
       const conn = await amqp.connect(ledgerQueue.url);
       const channel = await conn.createChannel();
-      await channel.assertQueue(ledgerQueue.transactionQueue, { exclusive: true });
+      await channel.assertQueue(ledgerQueue.transactionQueue, { exclusive: false });
 
-      channel.sendToQueue(ledgerQueue.transactionQueue, Buffer.alloc(JSON.stringify(ledgerTransaction)));
+      channel.sendToQueue(ledgerQueue.transactionQueue, Buffer.from(JSON.stringify(ledgerTransaction), 'utf8'));
       // wait half a second to close channel after msg is actually sent
       setTimeout(() => {
         conn.close();
