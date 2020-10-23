@@ -76,7 +76,7 @@
     "morgan": "1.7.0",
     "multer": "0.1.8",
     "newrelic": "4.1.2",
-    "node-fetch": "2.1.2",
+    "node-fetch": "2.6.1",
     "node-slack": "0.0.7",
     "node-slug": "0.0.2",
     "nodemailer": "1.11.0",
