@@ -67,7 +67,7 @@
     "knox": "github:automattic/knox#278337d7673341658efcc81e631c3f63fa53d374",
     "knox-mpu-alt": "0.2.2",
     "limax": "^1.7.0",
-    "lodash": "3.10.1",
+    "lodash": "4.17.21",
     "lru-cache": "4.1.1",
     "merge-options": "^1.0.1",
     "mime": "2.2.2",
